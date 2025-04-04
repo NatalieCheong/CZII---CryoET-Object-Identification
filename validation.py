@@ -228,6 +228,150 @@ def visualize_comparison(tomo_data, density_map, ground_truth_coords, experiment
     peak_order = np.argsort(peak_values)[::-1]  # Sort in descending order
 
     # Assign top 20% to easier particles, next 30% to harder particles
+    # Assign top 20% to easier particles, next 30% to harder particles
     n_peaks = len(coords)
     easy_threshold = int(n_peaks * 0.2)
-    hard_threshold =
+    hard_threshold = int(n_peaks * 0.5)
+    
+    easy_particles = ['apo-ferritin', 'ribosome', 'virus-like-particle']
+    hard_particles = ['beta-galactosidase', 'thyroglobulin']
+    
+    # Randomly assign among the categories
+    np.random.seed(42)  # For reproducibility
+    
+    for i, idx in enumerate(peak_order):
+        z, y, x = coords[idx]
+        
+        # Convert voxel coordinates to physical coordinates
+        physical_x = x * 10.0
+        physical_y = y * 10.0
+        physical_z = z * 10.0
+        
+        if i < easy_threshold:
+            # Assign to an easy particle type
+            p_type = np.random.choice(easy_particles)
+        elif i < hard_threshold:
+            # Assign to a hard particle type
+            p_type = np.random.choice(hard_particles)
+        else:
+            # Skip the rest
+            continue
+        
+        if p_type not in predicted_coords:
+            predicted_coords[p_type] = []
+        
+        predicted_coords[p_type].append((physical_x, physical_y, physical_z))
+    
+    # For each slice, create a side-by-side comparison
+    for slice_idx in slices:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        
+        # Ground truth visualization
+        ax1.imshow(tomo_data[slice_idx], cmap='gray')
+        ax1.set_title(f'Ground Truth - Z-Slice {slice_idx}/{depth}')
+        
+        # Add a semi-transparent overlay of the density map
+        ax2.imshow(tomo_data[slice_idx], cmap='gray')
+        density_overlay = ax2.imshow(density_map[slice_idx], cmap='hot', alpha=0.5)
+        fig.colorbar(density_overlay, ax=ax2, fraction=0.046, pad=0.04)
+        ax2.set_title(f'Model Predictions - Z-Slice {slice_idx}/{depth}')
+        
+        # Get slice range (particles near this slice)
+        slice_range = 10  # Consider particles within ±10 slices
+        z_min = (slice_idx - slice_range) * 10.0  # Convert to physical coordinates
+        z_max = (slice_idx + slice_range) * 10.0
+        
+        # Add ground truth particles
+        for p_type, coords in ground_truth_coords.items():
+            # Skip if particle type not in our dictionary
+            if p_type not in particle_types:
+                continue
+            
+            # Get color and radius for this particle type
+            color = particle_types[p_type]['color']
+            radius = particle_types[p_type]['radius'] * 0.1  # Scale down for visualization
+            
+            # Count particles in this slice
+            slice_particles = [(x, y, z) for x, y, z in coords if z_min <= z <= z_max]
+            n_particles = len(slice_particles)
+            
+            # Skip if no particles of this type in this slice
+            if n_particles == 0:
+                continue
+            
+            # Add to legend
+            ax1.plot([], [], 'o', color=color, label=f'{p_type} ({n_particles})')
+            
+            # Add circle for each particle
+            for x, y, z in slice_particles:
+                # Convert physical coordinates to pixel coordinates
+                y_px = y / 10.0
+                x_px = x / 10.0
+                
+                # Add circle
+                circle = plt.Circle((x_px, y_px), radius, color=color, fill=False, linewidth=1.5, alpha=0.7)
+                ax1.add_patch(circle)
+        
+        # Add predicted particles
+        for p_type, coords in predicted_coords.items():
+            # Skip if particle type not in our dictionary
+            if p_type not in particle_types:
+                continue
+            
+            # Get color and radius for this particle type
+            color = particle_types[p_type]['color']
+            radius = particle_types[p_type]['radius'] * 0.1  # Scale down for visualization
+            
+            # Count particles in this slice
+            slice_particles = [(x, y, z) for x, y, z in coords if z_min <= z <= z_max]
+            n_particles = len(slice_particles)
+            
+            # Skip if no particles of this type in this slice
+            if n_particles == 0:
+                continue
+            
+            # Add to legend
+            ax2.plot([], [], 'o', color=color, label=f'{p_type} ({n_particles})')
+            
+            # Add circle for each particle
+            for x, y, z in slice_particles:
+                # Convert physical coordinates to pixel coordinates
+                y_px = y / 10.0
+                x_px = x / 10.0
+                
+                # Add circle
+                circle = plt.Circle((x_px, y_px), radius, color=color, fill=False, linewidth=1.5, alpha=0.7)
+                ax2.add_patch(circle)
+        
+        # Add legends
+        ax1.legend(loc='upper right', bbox_to_anchor=(1.1, 1))
+        ax2.legend(loc='upper right', bbox_to_anchor=(1.1, 1))
+        
+        # Remove axes
+        ax1.axis('off')
+        ax2.axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(visualization_dir, f'{experiment}_slice_{slice_idx}_comparison.png'), dpi=200, bbox_inches='tight')
+        plt.close()
+
+def main():
+    # Set paths
+    base_dir = '/kaggle/input/czii-cryo-et-object-identification'
+    train_dir = os.path.join(base_dir, 'train')
+    model_dir = '/kaggle/working/models'
+    visualization_dir = '/kaggle/working/val_visualizations'
+    
+    # Create visualization directory if it doesn't exist
+    os.makedirs(visualization_dir, exist_ok=True)
+    
+    # Set device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    
+    # Prepare validation tomograms and visualize
+    prepare_validation_tomograms(train_dir, model_dir, visualization_dir, device)
+    print("Validation tomogram visualization complete.")
+
+if __name__ == "__main__":
+    main()
